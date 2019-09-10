@@ -15,7 +15,6 @@ import smopy
 import fiona
 from shapely import geometry
 from descartes import PolygonPatch
-import copy
 
 
 def voronoi_finite_polygons_2d(vor, radius=None):
@@ -126,16 +125,10 @@ def plot_hospitals_voronoi(regionpolygon):
         if np.all(simplex >= 0):
             plt.plot(vor.vertices[simplex, 0], vor.vertices[simplex, 1], 'k-')
 
-    prev_num_ridge_vertices = len(vor.ridge_vertices)
     # Plot "infinite" ridges
     center = points.mean(axis=0)
-    newvorvertices = copy.deepcopy(vor.vertices)
-    newridgevertices = copy.deepcopy(vor.ridge_vertices)
-    newvorregions = copy.deepcopy(vor.regions)
-
-    for j in range(len(vor.ridge_vertices)):
-        pointidx = vor.ridge_points[j]
-        simplex = vor.ridge_vertices[j]
+    for pointidx, simplex in zip(vor.ridge_points, vor.ridge_vertices):
+        # print(pointidx, simplex)
         simplex = np.asarray(simplex)
         if np.any(simplex < 0):
             i = simplex[simplex >= 0][0] # finite end Voronoi vertex
@@ -149,64 +142,12 @@ def plot_hospitals_voronoi(regionpolygon):
                                                              n,
                                                              orient,
                                                              encbox)
-            ii = np.where(simplex < 0)[0][0] # finite end Voronoi vertex
-            kk = newvorvertices.shape[0]
-            newridgevertices[j][ii] = kk - 1
-            # plt.plot([vor.vertices[i,0], far_point_clipped[0]],
-                     # [vor.vertices[i,1], far_point_clipped[1]], 'k--')
-
-    newvorregions = np.array([ np.array(f) for f in newvorregions])
-
-    # Update voronoi regions to include added vertices and corners
-    for j, rr in enumerate(vor.regions):
-        r = np.array(rr)
-        print('check 0, r ', r)
-        if not -1 in r: continue
-
-        # Looking for ridges bounding my point
-        for i, rid in enumerate(vor.ridge_points):
-            if j not in rid: continue 
-            z = vor.ridge_vertices[i]
-            if -1 not in z: continue # I want unbounded ridges
-            myidx = 0 if z[0] == -1 else 1
-            # print('###')
-            # print(r)
-            # print(z)
-            # print(myidx)
-            # print(r)
-            ff = np.append(r, newridgevertices[i][myidx])
-            # print(r)
-            # print(type(r))
-            # print(newridgevertices[i][myidx])
-            # print(type(ff))
-            ff = np.delete(ff, np.where(ff == -1))
-            newvorregions[j] = ff
-            print(ff)
-            print(newvorregions)
-            print('##############################################################')
-            # print(r)
-            # print('###')
-            # print(ff)
-
-    print('0:{}'.format(0))
-    print(vor.regions)
-    print(newvorregions)
-    
-            # myidx = 1 if z[0] == -1 else 0
-            # zz = np.where(z == -1)[0]
-            # ridgeids.append(j)
-            # print(z, zz)
-
-        # for ridgeid in ridgeids:
-        # print(z)
-        # for p in newridgevertices:
-            # regions.append()
-            # (newvorvertices[p[0]], newvorvertices[p[1]])
-
-    # print(ps)
-    # for p in ps:
-        # plt.Polygon()
-    # plt.show()
+            # print(far_point_clipped)
+            plt.plot([vor.vertices[i,0], far_point_clipped[0]],
+                     [vor.vertices[i,1], far_point_clipped[1]], 'k--')
+            # plt.plot([vor.vertices[i,0], far_point[0]],
+                     # [vor.vertices[i,1], far_point[1]], 'k--')
+    plt.show()
     return
 #########################################################
     # plt.show()
