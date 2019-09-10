@@ -11,11 +11,14 @@ import scipy.spatial as spatial
 import matplotlib.pyplot as plt
 import matplotlib.path as path
 import matplotlib as mpl
+from matplotlib import patches
 import smopy
 import fiona
 from shapely import geometry
 from descartes import PolygonPatch
 import copy
+from scipy.spatial import KDTree
+import itertools
 
 
 def voronoi_finite_polygons_2d(vor, radius=None):
@@ -92,43 +95,118 @@ def line_intersection(line1, line2):
     y = det(d, ydiff) / div
     return x, y
 
+##########################################################
 def get_crossing_point_rectangle(v0, alpha, orient, encbox):
     mindist = 999999999
 
-    for c in encbox:
-        i = 0 if c % 2 == 0  else 1 # xmin, ymin, xmax, ymax
-        d = (v0[i] - c)
-        d = d / alpha[i] * orient
+    for j, c in enumerate(encbox):
+        i = j%2
+        d = (c - v0[i]) # xmin, ymin, xmax, ymax
+        # if d == 0: return v0
+        if alpha[i] == 0: d *= orient
+        else: d = d / alpha[i] * orient
         if d < 0: continue
         if d < mindist: mindist = d
+        # print(c, d)
 
     p = v0 + orient * alpha * mindist
+    # print(v0, alpha, orient, encbox, p)
+    # input()
     return p
 
-def plot_hospitals_voronoi(regionpolygon):
-    df = pd.read_csv('data/rphospitals.csv')
-    points = df[['lat', 'lon']].to_numpy()
-    vor = spatial.Voronoi(df[['lat', 'lon']])
+##########################################################
+def get_bounded_polygons(vor, newvorvertices, newridgevertices, encbox):
+    newvorregions = copy.deepcopy(vor.regions)
+    newvorregions = np.array([ np.array(f) for f in newvorregions])
 
-#########################################################
-    
-    # Plot seeds (points) and voronoi vertices
-    plt.plot(points[:, 0], points[:, 1], 'o')
-    plt.plot(vor.vertices[:, 0], vor.vertices[:, 1], '*')
-    plt.xlim(-21.50, -21.00);
-    plt.ylim(-47.95, -47.65)
+    supernewregions = []
+    # Update voronoi regions to include added vertices and corners
+    for regidx, rr in enumerate(vor.regions):
+        reg = np.array(rr)
+        if not np.any(reg == -1):
+            supernewregions.append(rr)
+            continue
 
-    encbox = [-21.22, -47.86, -21.10, -47.74]
+        # Looking for ridges bounding my point
+        for ridgeid, ridgepts in enumerate(vor.ridge_points):
+            if not np.any(ridgepts == regidx): continue 
+            ridgevs = vor.ridge_vertices[ridgeid]
+            if -1 not in ridgevs: continue # I want unbounded ridges
+            myidx = 0 if ridgevs[0] == -1 else 1
 
+            ff = copy.deepcopy(rr)
+            ff.append(newridgevertices[ridgeid][myidx])
+            ff.remove(-1)
+            newvorregions[regidx] = ff
+
+    # Include corners
+    # from scipy.spatial import KDTree
+# points = np.array([[0, 0], [0, 1], [0, 2], [1, 0], [1, 1], [1, 2],
+                   # [2, 0], [2, 1], [2, 2]])
+    tree = KDTree(vor.points)
+    corners = itertools.product((encbox[0], encbox[2]), (encbox[1], encbox[3]))
+    ids = []
+    # input(newvorregions)
+    for c in corners:
+        dist, idx = tree.query(c)
+        # newvorvertices.append()
+        k = len(newvorvertices)
+        newvorvertices = np.row_stack((newvorvertices, c))
+        # ids.append(idx)
+        newvorregions[vor.point_region[idx]].append(k)
+        # print(dist, idx)
+    # input(newvorregions)
+    # print('##########################################################')
+    # input(vor.point_region)
+    # input(newvorregions)
+
+    # print(vor.vertices)
+    # print(newvorvertices)
+    # print(vor.ridge_vertices)
+    # print(vor.regions)
+    # input(newvorregions)
+
+    convexpolys = []
+    for reg in newvorregions:
+        if len(reg) == 0: continue
+        # TODO: remove it
+        if len(reg) < 3: continue
+        points = newvorvertices[reg]
+        # print(type(points))
+        hull = spatial.ConvexHull(points)
+        # print(hull, points)
+        # input(hull.simplices)
+        pp = points[hull.vertices]
+        # pp = points[hull.simplices]
+        convexpolys.append(pp)
+    # input(convexpolys)
+    return convexpolys
+
+##########################################################
+def plot_finite_ridges(vor, ax):
+    """Plot the finite ridges of voronoi
+
+    Args:
+    ridge_vertices(np.ndarray):
+    """
     # Plot finite edges
     for simplex in vor.ridge_vertices:
         simplex = np.asarray(simplex)
         if np.all(simplex >= 0):
-            plt.plot(vor.vertices[simplex, 0], vor.vertices[simplex, 1], 'k-')
+            ax.plot(vor.vertices[simplex, 0], vor.vertices[simplex, 1], 'k-')
 
-    prev_num_ridge_vertices = len(vor.ridge_vertices)
-    # Plot "infinite" ridges
-    center = points.mean(axis=0)
+##########################################################
+def create_bounded_ridges(vor, encbox):
+    """Create bounded voronoi vertices bounded by encbox
+
+    Args:
+    vor(spatial.Voronoi): voronoi structure
+
+    Returns:
+    ret
+    """
+
+    center = vor.points.mean(axis=0)
     newvorvertices = copy.deepcopy(vor.vertices)
     newridgevertices = copy.deepcopy(vor.ridge_vertices)
     newvorregions = copy.deepcopy(vor.regions)
@@ -139,12 +217,12 @@ def plot_hospitals_voronoi(regionpolygon):
         simplex = np.asarray(simplex)
         if np.any(simplex < 0):
             i = simplex[simplex >= 0][0] # finite end Voronoi vertex
-            t = points[pointidx[1]] - points[pointidx[0]]  # tangent
+            t = vor.points[pointidx[1]] - vor.points[pointidx[0]]  # tangent
             t = t / np.linalg.norm(t)
             n = np.array([-t[1], t[0]]) # normal
-            midpoint = points[pointidx].mean(axis=0)
+            # input(n)
+            midpoint = vor.points[pointidx].mean(axis=0)
             orient = np.sign(np.dot(midpoint - center, n))
-            far_point = vor.vertices[i] +  orient* n * 1
             far_point_clipped = get_crossing_point_rectangle(vor.vertices[i],
                                                              n,
                                                              orient,
@@ -152,61 +230,47 @@ def plot_hospitals_voronoi(regionpolygon):
             ii = np.where(simplex < 0)[0][0] # finite end Voronoi vertex
             kk = newvorvertices.shape[0]
             newridgevertices[j][ii] = kk - 1
+            newvorvertices = np.row_stack((newvorvertices, far_point_clipped))
+            # ax.plot(far_point_clipped[0], far_point_clipped[1], 'og')
             # plt.plot([vor.vertices[i,0], far_point_clipped[0]],
                      # [vor.vertices[i,1], far_point_clipped[1]], 'k--')
+    return newvorvertices, newridgevertices, newvorregions
 
-    newvorregions = np.array([ np.array(f) for f in newvorregions])
+##########################################################
+def plot_hospitals_voronoi(regionpolygon):
+    df = pd.read_csv('data/sample01.csv')
+    # df = pd.read_csv('data/rphospitals.csv')
+    points = df[['lat', 'lon']].to_numpy()
+    vor = spatial.Voronoi(df[['lat', 'lon']])
 
-    # Update voronoi regions to include added vertices and corners
-    for j, rr in enumerate(vor.regions):
-        r = np.array(rr)
-        print('check 0, r ', r)
-        if not -1 in r: continue
+    # Plot seeds (points) and voronoi vertices
+    fig, ax = plt.subplots(1, 1)
 
-        # Looking for ridges bounding my point
-        for i, rid in enumerate(vor.ridge_points):
-            if j not in rid: continue 
-            z = vor.ridge_vertices[i]
-            if -1 not in z: continue # I want unbounded ridges
-            myidx = 0 if z[0] == -1 else 1
-            # print('###')
-            # print(r)
-            # print(z)
-            # print(myidx)
-            # print(r)
-            ff = np.append(r, newridgevertices[i][myidx])
-            # print(r)
-            # print(type(r))
-            # print(newridgevertices[i][myidx])
-            # print(type(ff))
-            ff = np.delete(ff, np.where(ff == -1))
-            newvorregions[j] = ff
-            print(ff)
-            print(newvorregions)
-            print('##############################################################')
-            # print(r)
-            # print('###')
-            # print(ff)
+    ax.plot(points[:, 0], points[:, 1], 'o')
+    ax.plot(vor.vertices[:, 0], vor.vertices[:, 1], '*')
 
-    print('0:{}'.format(0))
-    print(vor.regions)
-    print(newvorregions)
-    
-            # myidx = 1 if z[0] == -1 else 0
-            # zz = np.where(z == -1)[0]
-            # ridgeids.append(j)
-            # print(z, zz)
+    ax.set_xlim(-21.55, -20.95);
+    ax.set_ylim(-47.95, -47.45)
 
-        # for ridgeid in ridgeids:
-        # print(z)
-        # for p in newridgevertices:
-            # regions.append()
-            # (newvorvertices[p[0]], newvorvertices[p[1]])
+    # encbox = [-21.5, -47.9, -21.0, -47.5]
+    encbox = [-21.45, -47.9, -21.05, -47.5]
 
-    # print(ps)
-    # for p in ps:
-        # plt.Polygon()
-    # plt.show()
+    plot_finite_ridges(vor, ax)
+    newvorvertices, newridgevertices, newvorregions = create_bounded_ridges(vor, encbox)
+
+    # spatial.voronoi_plot_2d(vor)
+    rect = patches.Rectangle((encbox[0], encbox[1]),
+                             encbox[2]-encbox[0],
+                             encbox[3]-encbox[1],
+                             linewidth=1,edgecolor='r',facecolor='none')
+
+    ax.add_patch(rect)
+    polys = get_bounded_polygons(vor, newvorvertices, newridgevertices, encbox)
+
+    for p in polys:
+        pgon = plt.Polygon(p, color='g', alpha=0.5)
+        ax.add_patch(pgon)
+    plt.show()
     return
 #########################################################
     # plt.show()
@@ -227,7 +291,8 @@ def plot_hospitals_voronoi(regionpolygon):
     for r in regions:
         p = vertices[r]
         poly = geometry.Polygon(p)
-        # plt.plot(poly)
+
+        plt.plot(poly)
         # polygon_shape = patches.Polygon(points, linewidth=1, edgecolor='r', facecolor='none')
         # ax.add_patch(poly)
         # ax.plot(*poly.exterior.xy);
@@ -235,7 +300,7 @@ def plot_hospitals_voronoi(regionpolygon):
         # break
 
     # plt.plot(polygons)
-    # plt.show()
+    plt.show()
     # return
     # ax = m.show_mpl(figsize=(12, 8))
     # fig, ax = plt.subplots(1, 1)
@@ -248,9 +313,11 @@ def plot_hospitals_voronoi(regionpolygon):
 
     plt.show()
 
+##########################################################
 def load_map():
+    # shape = fiona.open('data/rp_map.shp')
     shape = fiona.open('data/rp_map.shp')
-    b = shape.next()
+    b = next(iter(shape))
     p = b['geometry']['coordinates'][0]
     # print(b['coordinates'])
     x = [z[0] for z in p ]
@@ -260,7 +327,7 @@ def load_map():
     # plt.show()
     return poly
     
-
+##########################################################
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     args = parser.parse_args()
