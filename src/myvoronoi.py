@@ -119,12 +119,10 @@ def get_bounded_polygons(vor, newvorvertices, newridgevertices, encbox):
     newvorregions = copy.deepcopy(vor.regions)
     newvorregions = np.array([ np.array(f) for f in newvorregions])
 
-    supernewregions = []
     # Update voronoi regions to include added vertices and corners
     for regidx, rr in enumerate(vor.regions):
         reg = np.array(rr)
         if not np.any(reg == -1):
-            supernewregions.append(rr)
             continue
 
         # Looking for ridges bounding my point
@@ -154,17 +152,6 @@ def get_bounded_polygons(vor, newvorvertices, newridgevertices, encbox):
         newvorvertices = np.row_stack((newvorvertices, c))
         # ids.append(idx)
         newvorregions[vor.point_region[idx]].append(k)
-        # print(dist, idx)
-    # input(newvorregions)
-    # print('##########################################################')
-    # input(vor.point_region)
-    # input(newvorregions)
-
-    # print(vor.vertices)
-    # print(newvorvertices)
-    # print(vor.ridge_vertices)
-    # print(vor.regions)
-    # input(newvorregions)
 
     convexpolys = []
     for reg in newvorregions:
@@ -196,7 +183,7 @@ def plot_finite_ridges(vor, ax):
             ax.plot(vor.vertices[simplex, 0], vor.vertices[simplex, 1], 'k-')
 
 ##########################################################
-def create_bounded_ridges(vor, encbox):
+def create_bounded_ridges(vor, encbox, ax):
     """Create bounded voronoi vertices bounded by encbox
 
     Args:
@@ -231,9 +218,10 @@ def create_bounded_ridges(vor, encbox):
             kk = newvorvertices.shape[0]
             newridgevertices[j][ii] = kk - 1
             newvorvertices = np.row_stack((newvorvertices, far_point_clipped))
-            # ax.plot(far_point_clipped[0], far_point_clipped[1], 'og')
-            # plt.plot([vor.vertices[i,0], far_point_clipped[0]],
-                     # [vor.vertices[i,1], far_point_clipped[1]], 'k--')
+            plt.plot([vor.vertices[i,0], far_point_clipped[0]],
+                     [vor.vertices[i,1], far_point_clipped[1]], 'k--')
+
+            ax.plot(far_point_clipped[0], far_point_clipped[1], 'og')
     return newvorvertices, newridgevertices, newvorregions
 
 ##########################################################
@@ -255,8 +243,12 @@ def plot_hospitals_voronoi(regionpolygon):
     # encbox = [-21.5, -47.9, -21.0, -47.5]
     encbox = [-21.45, -47.9, -21.05, -47.5]
 
+    # print(vor.regions)
     plot_finite_ridges(vor, ax)
-    newvorvertices, newridgevertices, newvorregions = create_bounded_ridges(vor, encbox)
+    newvorvertices, newridgevertices, newvorregions = create_bounded_ridges(vor, encbox, ax)
+    print(vor.vertices, newvorvertices)
+    print(vor.ridge_vertices, newridgevertices)
+    # print(vor.regions, newvorregions) # still the same
 
     # spatial.voronoi_plot_2d(vor)
     rect = patches.Rectangle((encbox[0], encbox[1]),
@@ -269,7 +261,7 @@ def plot_hospitals_voronoi(regionpolygon):
 
     for p in polys:
         pgon = plt.Polygon(p, color='g', alpha=0.5)
-        ax.add_patch(pgon)
+        # ax.add_patch(pgon)
     plt.show()
     return
 #########################################################
