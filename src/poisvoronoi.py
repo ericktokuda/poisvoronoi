@@ -87,7 +87,6 @@ def get_boxed_polygons(vor, newvorvertices, newridgevertices, encbox):
         newvorregions[regidx] = copy.deepcopy(rr)
         # Looking for ridges bounding my point
         for ridgeid, ridgepts in enumerate(vor.ridge_points):
-            # print(ridgeid, ridgepts)
             if not np.any(ridgepts == seedidx): continue
             ridgevs = vor.ridge_vertices[ridgeid]
             if -1 not in ridgevs: continue # I want unbounded ridges
@@ -201,12 +200,19 @@ def compute_cells_bounded_by_polygon(cells, mappoly):
         polys.append(polygon1)
     return polys
 
+def plot_polygon(ax, pol, c):
+    x,y = pol.exterior.xy
+    z = list(zip(*pol.exterior.coords.xy))
+    ax.add_patch(patches.Polygon(z, linewidth=2, edgecolor='r',
+                                     facecolor=c))
 def plot_bounded_cells(ax, polys):
-    for polygon1 in polys:
-        x,y = polygon1.exterior.xy
-        z = list(zip(*polygon1.exterior.coords.xy))
-        ax.add_patch(patches.Polygon(z, linewidth=2, edgecolor='r',
-                                         facecolor=np.random.rand(3,)))
+    for pol in polys:
+        if pol.geom_type == 'MultiPolygon':
+            for polyg in pol.geoms:
+                plot_polygon(ax, polyg, np.random.rand(3,))
+        else:
+            plot_polygon(ax, pol, np.random.rand(3,))
+
     ax.autoscale_view()
 ##########################################################
 def main():
@@ -237,13 +243,14 @@ def main():
     centroids = np.array([np.array(p.centroid.coords)[0] for p in polys])
     orderedcentroids = centroids[vor.point_region-1] # Sort the region ids
     centroidsdists = scipy.spatial.distance.cdist(centroids, points).diagonal()
+    #TODO: adjust above computation for the multiple polygons case
     areasmean = np.mean(areas)
     areasstd = np.std(areas)
     df = pd.DataFrame({'areasmean':areasmean, 'areasstd':areasstd,
                        'centroidsdists':centroidsdists})
-    df.to_csv(pjoin(args.outdir, 'attribs.csv'), header=True, index=False)
+    df.to_csv(pjoin(args.outdir, 'voronoi.csv'), header=True, index=False)
 
-    plt.savefig(pjoin(args.outdir, 'vis.pdf'))
+    plt.savefig(pjoin(args.outdir, 'voronoi.pdf'))
 
 if __name__ == "__main__":
     main()
