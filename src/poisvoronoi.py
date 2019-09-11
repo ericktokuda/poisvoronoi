@@ -129,7 +129,7 @@ def plot_finite_ridges(ax, vor):
         ax.plot(vor.vertices[simplex, 0], vor.vertices[simplex, 1], 'k-')
 
 ##########################################################
-def create_bounded_ridges(vor, encbox, ax):
+def create_bounded_ridges(vor, encbox, ax=None):
     """Create bounded voronoi vertices bounded by encbox
 
     Args:
@@ -162,24 +162,16 @@ def create_bounded_ridges(vor, encbox, ax):
                                                              encbox)
             ii = np.where(simplex < 0)[0][0] # finite end Voronoi vertex
             kk = newvorvertices.shape[0]
-            # print(newridgevertices)
             newridgevertices[j][ii] = kk
-            # print(newridgevertices)
-            # print('#############################')
             newvorvertices = np.row_stack((newvorvertices, far_point_clipped))
+            if ax == None: continue
             ax.plot([vor.vertices[i,0], far_point_clipped[0]],
                      [vor.vertices[i,1], far_point_clipped[1]], 'k--')
 
             ax.plot(far_point_clipped[0], far_point_clipped[1], 'og')
     return newvorvertices, newridgevertices
 
-def plot_bounded_ridges(ax, vor, b):
-    newvorvertices, newridgevertices = create_bounded_ridges(vor, b, ax)
-
-    ax.add_patch(patches.Rectangle((b[0], b[1]), b[2]-b[0], b[3]-b[1],
-                                       linewidth=1, edgecolor='r', facecolor='none'))
-    polys = get_bounded_polygons(vor, newvorvertices, newridgevertices, b)
-
+def plot_bounded_ridges(ax, polys):
     for p in polys:
         pgon = plt.Polygon(p, color=np.random.rand(3,), alpha=0.5)
         ax.add_patch(pgon)
@@ -190,7 +182,15 @@ def plot_bounded_voronoi(ax, vor, b):
     ax.plot(vor.vertices[:, 0], vor.vertices[:, 1], 's') # Plot voronoi vertices
 
     plot_finite_ridges(ax, vor)
-    plot_bounded_ridges(ax, vor, b)
+
+    newvorvertices, newridgevertices = create_bounded_ridges(vor, b)
+    ax.add_patch(patches.Rectangle(b[0:2], b[2]-b[0], b[3]-b[1],
+                                   linewidth=1, edgecolor='r', facecolor='none'))
+    cells = get_bounded_polygons(vor, newvorvertices, newridgevertices, b)
+
+    plot_bounded_ridges(ax, cells)
+    return cells
+
 
 ##########################################################
 def main():
@@ -203,18 +203,29 @@ def main():
     logging.basicConfig(format='[%(asctime)s] %(message)s',
     datefmt='%Y%m%d %H:%M', level=logging.INFO)
 
-    figs, axs = plt.subplots(1, 2, figsize=(20, 15))
+    figs, axs = plt.subplots(1, 3, figsize=(35, 15))
 
-    borders = load_map(args.shp)
-    bbox = get_encbox_from_borders(borders)
+    mappoly = load_map(args.shp)
+    bbox = get_encbox_from_borders(mappoly)
     df = pd.read_csv(args.pois) # Load seeds
 
     vor = spatial.Voronoi(df[['lon', 'lat']].to_numpy()) # Compute regular Voronoi
 
-    spatial.voronoi_plot_2d(vor, ax=axs[1]) # Plot default unbounded voronoi
+    spatial.voronoi_plot_2d(vor, ax=axs[0]) # Plot default unbounded voronoi
 
-    plot_bounded_voronoi(axs[0], vor, bbox)
-    plt.savefig(pjoin(args.outdir, 'out.svg'))
+    cells = plot_bounded_voronoi(axs[1], vor, bbox)
+
+    from descartes import PolygonPatch
+    for c in cells:
+        poly = geometry.Polygon(c)
+        polygon1 = poly.intersection(mappoly)
+        x,y = polygon1.exterior.xy
+        z = list(zip(*polygon1.exterior.coords.xy))
+        axs[2].add_patch(patches.Polygon(z, linewidth=2, edgecolor='r',
+                                         facecolor=np.random.rand(3,)))
+    axs[2].autoscale_view()
+
+    plt.savefig(pjoin(args.outdir, 'out.pdf'))
 
 if __name__ == "__main__":
     main()
