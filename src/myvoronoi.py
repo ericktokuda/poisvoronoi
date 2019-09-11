@@ -20,7 +20,20 @@ import copy
 from scipy.spatial import KDTree
 import itertools
 
+##########################################################
+def plot_voronoi_finite_polygons_2d(vor):
+    newregions, newvertices = voronoi_finite_polygons_2d(vor, radius=1)
+    for region in newregions:
+        polygon = newvertices[region]
+        plt.fill(*zip(*polygon), alpha=0.4)
 
+    plt.plot(vor.points[:, 0], vor.points[:, 1], 'ko')
+    plt.axis('equal')
+    plt.xlim(vor.min_bound[0] - 1, vor.max_bound[0] + 1)
+    plt.ylim(vor.min_bound[1] - 1, vor.max_bound[1] + 1)
+    plt.show()
+
+##########################################################
 def voronoi_finite_polygons_2d(vor, radius=None):
     """Reconstruct infinite Voronoi regions in a 2D diagram to finite regions.
     https://stackoverflow.com/a/20678647/1595060
@@ -78,40 +91,19 @@ def voronoi_finite_polygons_2d(vor, radius=None):
         new_regions.append(new_region.tolist())
     return new_regions, np.asarray(new_vertices)
 
-def line_intersection(line1, line2):
-    # https://stackoverflow.com/questions/20677795/how-do-i-compute-the-intersection-point-of-two-lines
-    xdiff = (line1[0][0] - line1[1][0], line2[0][0] - line2[1][0])
-    ydiff = (line1[0][1] - line1[1][1], line2[0][1] - line2[1][1])
-
-    def det(a, b):
-        return a[0] * b[1] - a[1] * b[0]
-
-    div = det(xdiff, ydiff)
-    if div == 0:
-       raise Exception('lines do not intersect')
-
-    d = (det(*line1), det(*line2))
-    x = det(d, xdiff) / div
-    y = det(d, ydiff) / div
-    return x, y
-
 ##########################################################
 def get_crossing_point_rectangle(v0, alpha, orient, encbox):
     mindist = 999999999
 
     for j, c in enumerate(encbox):
-        i = j%2
+        i = j % 2
         d = (c - v0[i]) # xmin, ymin, xmax, ymax
-        # if d == 0: return v0
         if alpha[i] == 0: d *= orient
         else: d = d / alpha[i] * orient
         if d < 0: continue
         if d < mindist: mindist = d
-        # print(c, d)
 
     p = v0 + orient * alpha * mindist
-    # print(v0, alpha, orient, encbox, p)
-    # input()
     return p
 
 ##########################################################
@@ -122,21 +114,32 @@ def get_bounded_polygons(vor, newvorvertices, newridgevertices, encbox):
     # Update voronoi regions to include added vertices and corners
     for regidx, rr in enumerate(vor.regions):
         reg = np.array(rr)
-        if not np.any(reg == -1):
-            continue
+        if not np.any(reg == -1): continue
+        foo = np.where(vor.point_region==regidx)
+        print(foo)
+        seedidx = foo[0]
+        print('seeidx')
+        print(seedidx)
 
+        newvorregions[regidx] = copy.deepcopy(rr)
         # Looking for ridges bounding my point
         for ridgeid, ridgepts in enumerate(vor.ridge_points):
-            if not np.any(ridgepts == regidx): continue 
+            # print(ridgeid, ridgepts)
+            # print('asfdasdfasdfasdf')
+            if not np.any(ridgepts == seedidx): continue
             ridgevs = vor.ridge_vertices[ridgeid]
             if -1 not in ridgevs: continue # I want unbounded ridges
             myidx = 0 if ridgevs[0] == -1 else 1
 
-            ff = copy.deepcopy(rr)
-            ff.append(newridgevertices[ridgeid][myidx])
-            ff.remove(-1)
-            newvorregions[regidx] = ff
+            # ff.append(newridgevertices[ridgeid][myidx])
+            # ff.remove(-1)
+            # newvorregions[regidx] = ff
+            newvorregions[regidx].append(newridgevertices[ridgeid][myidx])
+        if -1 in newvorregions[regidx]:  newvorregions[regidx].remove(-1)
 
+    print('#####################')
+    print(vor.regions)
+    print(newvorregions)
     # Include corners
     # from scipy.spatial import KDTree
 # points = np.array([[0, 0], [0, 1], [0, 2], [1, 0], [1, 1], [1, 2],
@@ -196,7 +199,6 @@ def create_bounded_ridges(vor, encbox, ax):
     center = vor.points.mean(axis=0)
     newvorvertices = copy.deepcopy(vor.vertices)
     newridgevertices = copy.deepcopy(vor.ridge_vertices)
-    newvorregions = copy.deepcopy(vor.regions)
 
     for j in range(len(vor.ridge_vertices)):
         pointidx = vor.ridge_points[j]
@@ -216,13 +218,16 @@ def create_bounded_ridges(vor, encbox, ax):
                                                              encbox)
             ii = np.where(simplex < 0)[0][0] # finite end Voronoi vertex
             kk = newvorvertices.shape[0]
-            newridgevertices[j][ii] = kk - 1
+            # print(newridgevertices)
+            newridgevertices[j][ii] = kk
+            # print(newridgevertices)
+            # print('#############################')
             newvorvertices = np.row_stack((newvorvertices, far_point_clipped))
             plt.plot([vor.vertices[i,0], far_point_clipped[0]],
                      [vor.vertices[i,1], far_point_clipped[1]], 'k--')
 
             ax.plot(far_point_clipped[0], far_point_clipped[1], 'og')
-    return newvorvertices, newridgevertices, newvorregions
+    return newvorvertices, newridgevertices
 
 ##########################################################
 def plot_hospitals_voronoi(regionpolygon):
@@ -237,18 +242,23 @@ def plot_hospitals_voronoi(regionpolygon):
     ax.plot(points[:, 0], points[:, 1], 'o')
     ax.plot(vor.vertices[:, 0], vor.vertices[:, 1], '*')
 
-    ax.set_xlim(-21.55, -20.95);
-    ax.set_ylim(-47.95, -47.45)
+    # ax.set_xlim(-21.55, -20.95);
+    # ax.set_ylim(-47.95, -47.45)
 
     # encbox = [-21.5, -47.9, -21.0, -47.5]
     encbox = [-21.45, -47.9, -21.05, -47.5]
 
-    # print(vor.regions)
+    # plot_voronoi_finite_polygons_2d(vor)
+
     plot_finite_ridges(vor, ax)
-    newvorvertices, newridgevertices, newvorregions = create_bounded_ridges(vor, encbox, ax)
-    print(vor.vertices, newvorvertices)
-    print(vor.ridge_vertices, newridgevertices)
-    # print(vor.regions, newvorregions) # still the same
+    # plt.show()
+    # input()
+    newvorvertices, newridgevertices = create_bounded_ridges(vor, encbox, ax)
+    # print(vor.vertices, newvorvertices)
+    # print(vor.ridge_vertices, newridgevertices)
+    # print(vor.regions, newvorregions)
+    # plt.show()
+    # input('wait')
 
     # spatial.voronoi_plot_2d(vor)
     rect = patches.Rectangle((encbox[0], encbox[1]),
@@ -257,11 +267,14 @@ def plot_hospitals_voronoi(regionpolygon):
                              linewidth=1,edgecolor='r',facecolor='none')
 
     ax.add_patch(rect)
+    print(newvorvertices)
+    print(newridgevertices)
     polys = get_bounded_polygons(vor, newvorvertices, newridgevertices, encbox)
+    print(polys)
 
     for p in polys:
-        pgon = plt.Polygon(p, color='g', alpha=0.5)
-        # ax.add_patch(pgon)
+        pgon = plt.Polygon(p, color=np.random.rand(3,), alpha=0.5)
+        ax.add_patch(pgon)
     plt.show()
     return
 #########################################################
@@ -306,28 +319,28 @@ def plot_hospitals_voronoi(regionpolygon):
     plt.show()
 
 ##########################################################
-def load_map():
-    # shape = fiona.open('data/rp_map.shp')
-    shape = fiona.open('data/rp_map.shp')
+def load_map(shp):
+    shape = fiona.open(shp)
     b = next(iter(shape))
     p = b['geometry']['coordinates'][0]
-    # print(b['coordinates'])
     x = [z[0] for z in p ]
     y = [z[1] for z in p ]
     poly = geometry.Polygon(p)
-    # plt.plot(*poly.exterior.xy);
-    # plt.show()
     return poly
     
 ##########################################################
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('shp', help='Map in shapefile')
+    parser.add_argument('pois', help='POIs in csv')
+    # parser.add_argument('--outdir', required=True, help='Output directory')
     args = parser.parse_args()
 
     logging.basicConfig(format='[%(asctime)s] %(message)s',
-    datefmt='%Y%m%d %H:%M', level=logging.INFO)
-    regionpolygon = load_map()
-    plot_hospitals_voronoi(regionpolygon)
+    datefmt='%Y%m%d %H:%M', level=logging.DEBUG)
+
+    regionpolygon = load_map(args.shp)
+    plot_hospitals_voronoi(regionpolygon, args.csv)
 
 if __name__ == "__main__":
     main()
