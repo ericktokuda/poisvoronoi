@@ -19,6 +19,7 @@ import fiona
 from shapely import geometry
 from descartes import PolygonPatch
 import copy
+import scipy
 from scipy.spatial import KDTree
 import itertools
 # import os
@@ -72,7 +73,7 @@ def get_crossing_point_rectangle(v0, alpha, orient, encbox):
     return p
 
 ##########################################################
-def get_bounded_polygons(vor, newvorvertices, newridgevertices, encbox):
+def get_boxed_polygons(vor, newvorvertices, newridgevertices, encbox):
     newvorregions = copy.deepcopy(vor.regions)
     newvorregions = np.array([ np.array(f) for f in newvorregions])
 
@@ -177,7 +178,7 @@ def plot_bounded_ridges(ax, polys):
         ax.add_patch(pgon)
     ax.autoscale_view()
 ##########################################################
-def plot_bounded_voronoi(ax, vor, b):
+def plot_boxed_voronoi(ax, vor, b):
     ax.plot(vor.points[:, 0], vor.points[:, 1], 'o') # Plot seeds (points)
     ax.plot(vor.vertices[:, 0], vor.vertices[:, 1], 's') # Plot voronoi vertices
 
@@ -186,12 +187,27 @@ def plot_bounded_voronoi(ax, vor, b):
     newvorvertices, newridgevertices = create_bounded_ridges(vor, b)
     ax.add_patch(patches.Rectangle(b[0:2], b[2]-b[0], b[3]-b[1],
                                    linewidth=1, edgecolor='r', facecolor='none'))
-    cells = get_bounded_polygons(vor, newvorvertices, newridgevertices, b)
+    cells = get_boxed_polygons(vor, newvorvertices, newridgevertices, b)
 
     plot_bounded_ridges(ax, cells)
     return cells
 
+##########################################################
+def compute_cells_bounded_by_polygon(cells, mappoly):
+    polys = []
+    for c in cells:
+        poly = geometry.Polygon(c)
+        polygon1 = poly.intersection(mappoly)
+        polys.append(polygon1)
+    return polys
 
+def plot_bounded_cells(ax, polys):
+    for polygon1 in polys:
+        x,y = polygon1.exterior.xy
+        z = list(zip(*polygon1.exterior.coords.xy))
+        ax.add_patch(patches.Polygon(z, linewidth=2, edgecolor='r',
+                                         facecolor=np.random.rand(3,)))
+    ax.autoscale_view()
 ##########################################################
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
@@ -209,23 +225,25 @@ def main():
     bbox = get_encbox_from_borders(mappoly)
     df = pd.read_csv(args.pois) # Load seeds
 
-    vor = spatial.Voronoi(df[['lon', 'lat']].to_numpy()) # Compute regular Voronoi
+    points = df[['lon', 'lat']].to_numpy()
+    vor = spatial.Voronoi(points) # Compute regular Voronoi
 
     spatial.voronoi_plot_2d(vor, ax=axs[0]) # Plot default unbounded voronoi
 
-    cells = plot_bounded_voronoi(axs[1], vor, bbox)
+    cells = plot_boxed_voronoi(axs[1], vor, bbox)
+    polys = compute_cells_bounded_by_polygon(cells, mappoly)
+    plot_bounded_cells(axs[2], polys)
+    areas = [p.area for p in polys]
+    centroids = np.array([np.array(p.centroid.coords)[0] for p in polys])
+    orderedcentroids = centroids[vor.point_region-1] # Sort the region ids
+    centroidsdists = scipy.spatial.distance.cdist(centroids, points).diagonal()
+    areasmean = np.mean(areas)
+    areasstd = np.std(areas)
+    df = pd.DataFrame({'areasmean':areasmean, 'areasstd':areasstd,
+                       'centroidsdists':centroidsdists})
+    df.to_csv(pjoin(args.outdir, 'attribs.csv'), header=True, index=False)
 
-    from descartes import PolygonPatch
-    for c in cells:
-        poly = geometry.Polygon(c)
-        polygon1 = poly.intersection(mappoly)
-        x,y = polygon1.exterior.xy
-        z = list(zip(*polygon1.exterior.coords.xy))
-        axs[2].add_patch(patches.Polygon(z, linewidth=2, edgecolor='r',
-                                         facecolor=np.random.rand(3,)))
-    axs[2].autoscale_view()
-
-    plt.savefig(pjoin(args.outdir, 'out.pdf'))
+    plt.savefig(pjoin(args.outdir, 'vis.pdf'))
 
 if __name__ == "__main__":
     main()
