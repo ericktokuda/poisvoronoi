@@ -1,0 +1,4 @@
+[submodule "osm-parser"]
+	path = osm-parser
+	url = git@github.com:tokudaek/osm-parser.git
+	branch = dev
