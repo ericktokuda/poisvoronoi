@@ -1,0 +1,4 @@
+[submodule "osmparser"]
+	path = osmparser
+	url = git@github.com:tokudaek/osmparser.git
+	branch = dev
